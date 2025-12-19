@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: jebbot
+      POSTGRES_USER: jebbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jebbot -d jebbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./services/api
+    env_file:
+      - ./services/api/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./apps/web
+    env_file:
+      - ./apps/web/.env.local
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  evolution:
+    image: evolutionapi/evolution-api:latest
+    env_file:
+      - ./services/evolution/.env
+    volumes:
+      - evolution_store:/evolution/store
+    restart: unless-stopped
+
+  # Optional "free" provider (local LLM)
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - DOMAIN=${DOMAIN}
+    depends_on:
+      - web
+      - api
+      - evolution
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  evolution_store:
+  caddy_data:
+  caddy_config:
+  ollama_data:
